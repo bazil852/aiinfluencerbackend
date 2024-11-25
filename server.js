@@ -216,8 +216,6 @@ app.post('/api/heygen-webhook', async (req, res) => {
       .eq('video_id', video_id)
       .single();
 
-      
-
     if (contentError || !content) {
       console.error('Content not found:', contentError || 'No content found');
       return res.status(404).json({ error: 'Content not found' });
@@ -225,38 +223,57 @@ app.post('/api/heygen-webhook', async (req, res) => {
 
     const { influencer_id, title, script } = content;
 
-    // Check if the influencer has an automation webhook
-    const { data: automationWebhook, error: webhookError } = await supabase
+    // Fetch the influencer's name
+    const { data: influencer, error: influencerError } = await supabase
+      .from('influencers')
+      .select('name')
+      .eq('id', influencer_id)
+      .single();
+
+    if (influencerError || !influencer) {
+      console.error('Influencer not found:', influencerError || 'No influencer found');
+      return res.status(404).json({ error: 'Influencer not found' });
+    }
+
+    const influencerName = influencer.name;
+
+    // Fetch all automation webhooks for the influencer
+    const { data: automationWebhooks, error: webhooksError } = await supabase
       .from('webhooks')
       .select('url')
       .eq('influencer_id', influencer_id)
-      .eq('webhook_type', 'automation')
-      .single();
+      .eq('webhook_type', 'automation');
 
-    if (webhookError || !automationWebhook) {
-      console.error('Automation webhook not found:', webhookError || 'No webhook found');
-      return res.status(404).json({ error: 'Automation webhook not found' });
+    if (webhooksError || !automationWebhooks.length) {
+      console.error('No automation webhooks found:', webhooksError || 'No webhooks found');
+      return res.status(404).json({ error: 'No automation webhooks found' });
     }
 
-    // Prepare data to send to the automation webhook
+    // Prepare data to send to the automation webhooks
     const payload = {
       event: 'video.completed',
       content: {
         title,
         script,
-        influencerName: 'Sample Influencer', // Update this if you have influencer data
+        influencerName,
         video_url: videoUrl,
         status: 'completed',
       },
     };
-    console.log (payload);
 
-    // Send data to the automation webhook URL
-    await axios.post(automationWebhook.url, payload, {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.log(`Payload prepared for automation webhooks:`, payload);
 
-    console.log(`Automation webhook called successfully: ${automationWebhook.url}`);
+    // Send data to each automation webhook URL
+    for (const webhook of automationWebhooks) {
+      try {
+        await axios.post(webhook.url, payload, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        console.log(`Automation webhook called successfully: ${webhook.url}`);
+      } catch (error) {
+        console.error(`Failed to call automation webhook: ${webhook.url}`, error.message);
+      }
+    }
 
     // Update content status in Supabase
     await supabase
@@ -270,6 +287,7 @@ app.post('/api/heygen-webhook', async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 });
+
 
 
 
