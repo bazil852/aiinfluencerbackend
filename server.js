@@ -1,10 +1,28 @@
-const express = require('express');
-const axios = require('axios');
-const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config();
+import express from "express";
+import axios from "axios";
+import stripeRoutes from "./routes/stripeRoutes.js";
+import { createClient } from '@supabase/supabase-js';
+import cors from "cors";
+import dotenv from "dotenv";
+dotenv.config();
 
 const app = express();
-app.use(express.json());
+
+app.use(cors());
+
+app.use((req, res, next) => {
+  if (req.originalUrl === "/api/stripe/webhook") {
+    next(); // Skip body parsing for /webhook
+  } else {
+    express.json()(req, res, next); // Apply JSON parser to other routes
+  }
+});
+
+app.use("/api/stripe", stripeRoutes);
+
+app.get("/", (req, res) => {
+  res.send("Welcome to the API!");
+});
 
 // Initialize Supabase client
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
