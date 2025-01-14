@@ -5,7 +5,7 @@ dotenv.config();
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-const plans = [
+const oldplans = [
   {
     name: "Basic",
     price: 30,
@@ -52,6 +52,13 @@ export const handleStripeWebhook = async (request, response) => {
   data = event.data;
   eventType = event.type;
 
+  // Fetch plans from Supabase
+  const { data: plans, error: plansError } = await supabase.from("plans").select("*");
+  if (plansError) {
+    console.error("Error fetching plans from Supabase:", plansError);
+    return response.status(500).send("Error fetching plans.");
+  }
+
   // Handle the event
   switch (eventType) {
     // case "payment_intent.succeeded":
@@ -82,8 +89,15 @@ export const handleStripeWebhook = async (request, response) => {
       // Assuming single plan per session
       const priceId = lineItems[0]?.price?.id;
 
-      const plan = plans.find((plan) => plan.priceId === priceId);
+      plans.map((plan)=>{
+        console.log("Price Id Plan",plan)
+      })
+
+      const plan = plans.find((plan) => plan.price_Id === priceId); // Match with Supabase plan
       console.log("PLAN", plan, priceId);
+
+      // const plan = plans.find((plan) => plan.priceId === priceId);
+      // console.log("PLAN", plan, priceId);
 
       if (!plan) {
         console.error("No matching plan found for priceId:", priceId);
@@ -95,7 +109,7 @@ export const handleStripeWebhook = async (request, response) => {
         const { error } = await supabase
           .from("users")
           .update({
-            tier: plan.name.toLowerCase(), // Update the tier based on plan name (e.g., 'basic')
+            current_plan: plan.id, // Store plan ID
             price_id: priceId, // Update with Stripe price ID
             subscription_id: subscriptionId, // Update with subscription ID
           })
@@ -106,7 +120,7 @@ export const handleStripeWebhook = async (request, response) => {
           throw new Error("Failed to update user tier and priceId");
         }
 
-        console.log(`User ${customer.email} updated to tier: ${plan.name}`);
+        console.log(`User ${customer.email} updated to tier: ${plan.plan_name}`);
       } else {
         console.error("No email found for customer.");
       }
@@ -131,7 +145,7 @@ export const handleStripeWebhook = async (request, response) => {
         const { error } = await supabase
           .from("users")
           .update({
-            tier: "free", // Reset to 'free' tier
+            current_plan: null, // Clear current_plan
             price_id: null, // Clear priceId
             subscription_id: null, // Clear subscription ID
           })
@@ -155,7 +169,9 @@ export const handleStripeWebhook = async (request, response) => {
       const subscription = data.object;
       const customer = await stripe.customers.retrieve(subscription.customer);
       const priceId = subscription.items.data[0].price.id;
-      const plan = plans.find((plan) => plan.priceId === priceId);
+
+      const plan = plans.find((plan) => plan.price_Id === priceId); 
+      // const plan = plans.find((plan) => plan.priceId === priceId);
 
       if (!plan) {
         console.error("No matching plan found for priceId:", priceId);
@@ -165,11 +181,11 @@ export const handleStripeWebhook = async (request, response) => {
       console.log("Subscription updated for customer:", customer.email, subscription);
 
       // Update user's tier and priceId in Supabase
-      if (customer.email) {
+      if (customer.email) {plan
         const { error } = await supabase
           .from("users")
           .update({
-            tier: plan.name.toLowerCase(), // Update tier based on plan name
+            current_plan: plan.id, // Store plan ID
             price_id: priceId, // Update priceId
             subscription_id: subscription.id, // Update subscription_id
           })
@@ -180,7 +196,7 @@ export const handleStripeWebhook = async (request, response) => {
           throw new Error("Failed to update user subscription");
         }
 
-        console.log(`User ${customer.email} updated to tier: ${plan.name}`);
+        console.log(`User ${customer.email} updated to tier: ${plan.plan_name}`);
       } else {
         console.error("No email found for customer.");
       }
